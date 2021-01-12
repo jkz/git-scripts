@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Manipulate multiple, dependent branches as a single stack
+set -eu -o pipefail
+# set -x
+
+function echol() {
+    printf '%s\n' "$@"
+}
+
+command=$1
+
+root_branch="${2-$(git branch --show-current)}"
+
+function echoDeps() {
+    local parent="$1"
+    git branch --contains "$parent" --format='%(refname:short)' | while read child ; do
+        if [[ "$child" != "$parent" ]] ; then
+            echo "$parent,$child"
+            echoDeps "$child"
+        fi
+    done
+}
+
+stack=$(
+    python <<HEREDOC
+from collections import Counter
+
+paths = {tuple(x.strip().split(',')) for x in '''
+
+$(echoDeps "$root_branch")
+
+'''.strip().split('\n')}
+
+edges = []
+while paths:
+    counts = Counter(x[1] for x in paths)
+    froms = set(x[0] for x in paths)
+    tos = set(x[1] for x in paths)
+    next_froms = froms - tos
+    next_tos = [path for path, count in counts.items() if count == 1]
+    edges += [path for path in paths if counts[path[1]] == 1]
+    paths = [path for path in paths if path[1] not in next_tos and path[0] not in next_froms]
+
+for edge in edges:
+    print(' '.join(edge))
+HEREDOC
+)
+
+function stack-rebase() {
+    printf '%s\n' "$stack" | while read base rebased ; do
+        echo "git rebase $base $rebased"
+        echo "git rebase $base $rebased" | sh
+        # On my windows machine this didn't work and added a question mark after rebased?
+        # git rebase "$base" "$rebased"
+    done
+}
+
+case $command in
+    commit)
+        echo "git $@"
+        git $@
+        stack-rebase
+        ;;
+    amend)
+        echo "git commit --fixup HEAD"
+        git commit --fixup HEAD
+        stack-rebase
+        ;;
+    push)
+        printf '%s\n' "$stack" | while read base rebased ; do
+            echo "git push -pfl $rebased"
+        done
+        ;;
+    rebase)
+        stack-rebase
+        ;;
+    *)
+        echo "No such command: $command"
+        ;;
+esac
