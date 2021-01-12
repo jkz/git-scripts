@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Take each Modified file in HEAD and create fixup commits for them,
+# referencing the previous commit in which that file was modified.
+set -eu -o pipefail
+set -x
+foo="$(git rev-parse HEAD)"
+git show --name-status "$foo" | grep '^M\s' | while read eattheM f ; do
+    git checkout "$foo~" -- "$f"
+done
+git commit --amend --no-edit --allow-empty
+git show --name-status "$foo" | grep '^M\s' | while read eattheM f ; do
+    git checkout "$foo" -- "$f"
+    git commit --fixup "$(git log -1 --format='%h' "$foo~" -- "$f")"
+done
