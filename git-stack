@@ -3,14 +3,23 @@
 set -eu -o pipefail
 # set -x
 
-function echol() {
-    printf '%s\n' "$@"
-}
-
 command=$1
 
 root_branch="${2-$(git branch --show-current)}"
 
+# Recursively find all branches in the downstream lineage of a given root branch. e.g.
+#
+#     A --- B ---- C
+#            \
+#             -----D
+#
+# Will output
+#
+#     A,B
+#     A,C
+#     A,D
+#     B,C
+#     B,D
 function echoDeps() {
     local parent="$1"
     git branch --contains "$parent" --format='%(refname:short)' | while read child ; do
@@ -21,6 +30,17 @@ function echoDeps() {
     done
 }
 
+# Find all dependencies of distance 1, and output them in order from root to leaf e.g.
+#
+#     A->B
+#     A->C
+#     B->C
+#
+# Will return
+#
+#     A->B
+#     B->C
+#
 stack=$(
     python <<HEREDOC
 from collections import Counter
@@ -46,6 +66,7 @@ for edge in edges:
 HEREDOC
 )
 
+# Using the order from root to leaf, rebase each branch on top of its parent
 function stack-rebase() {
     printf '%s\n' "$stack" | while read base rebased ; do
         echo "git rebase $base $rebased"
@@ -55,6 +76,8 @@ function stack-rebase() {
     done
 }
 
+# git-stack first collects dependency information, so it remembers 
+# when relations are lost by git commands changing the root branch hash.
 case $command in
     commit)
         echo "git $@"
