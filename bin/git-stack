@@ -101,3 +101,6 @@ case $command in
         echo "No such command: $command"
         ;;
 esac
+
+
+# Copyright © 2021 Jesse Zwaan <j.k.zwaan@gmail.com>
