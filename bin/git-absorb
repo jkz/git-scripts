@@ -1,14 +1,29 @@
 #!/usr/bin/env bash
+
+# git-absorb: push modifications down into their last change commit
+#
 # Take each Modified file in HEAD and create fixup commits for them,
-# referencing the previous commit in which that file was modified.
+# referencing the previous commit in which that file was modified. Removes those
+# modifications from the HEAD commit itself.
+#
+# Requires a final manual git rebase step, with autoSquash set to true.
+
 set -eu -o pipefail
-set -x
+${DEBUGSH+set -x}
+
 foo="$(git rev-parse HEAD)"
+
 git show --name-status "$foo" | grep '^M\s' | while read eattheM f ; do
     git checkout "$foo~" -- "$f"
 done
+
 git commit --amend --no-edit --allow-empty
+
 git show --name-status "$foo" | grep '^M\s' | while read eattheM f ; do
     git checkout "$foo" -- "$f"
     git commit --fixup "$(git log -1 --format='%h' "$foo~" -- "$f")"
 done
+
+# Copyright © 2021 Hraban Luyat <hraban@0brg.net>
+#
+# License for use of this code is detailed in the agpl-3.0.txt file

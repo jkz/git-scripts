@@ -1,0 +1,5 @@
+* git scripts
+
+Collection of utility scripts for a richer git workflow.
+
+See each script for explanation and context.
