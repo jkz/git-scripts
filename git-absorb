@@ -3,12 +3,30 @@
 # referencing the previous commit in which that file was modified.
 set -eu -o pipefail
 set -x
-foo="$(git rev-parse HEAD)"
-git show --name-status "$foo" | grep '^M\s' | while read eattheM f ; do
-    git checkout "$foo~" -- "$f"
-done
-git commit --amend --no-edit --allow-empty
-git show --name-status "$foo" | grep '^M\s' | while read eattheM f ; do
-    git checkout "$foo" -- "$f"
-    git commit --fixup "$(git log -1 --format='%h' "$foo~" -- "$f")"
-done
+
+head_hash="$(git rev-parse HEAD)"
+
+if (( "$#" ))
+then
+    # Arguments passed, treat each as file and absorb them
+    for f in "$@"
+    do
+        git checkout "$head_hash~" -- "$f"
+    done
+    git commit --amend --no-edit --allow-empty
+    for f in "$@"
+    do
+        git checkout "$head_hash" -- "$f"
+        git commit --fixup "$(git log -1 --format='%h' "$head_hash~" -- "$f")"
+    done
+else
+    # No arguments passed, absorb all modified files
+    git show --name-status "$head_hash" | grep '^M\s' | while read eattheM f ; do
+        git checkout "$head_hash~" -- "$f"
+    done
+    git commit --amend --no-edit --allow-empty
+    git show --name-status "$head_hash" | grep '^M\s' | while read eattheM f ; do
+        git checkout "$head_hash" -- "$f"
+        git commit --fixup "$(git log -1 --format='%h' "$head_hash~" -- "$f")"
+    done
+fi
