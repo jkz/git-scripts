@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Poll the git index and run a given command on every change
+set -eu -o pipefail
+# set -x
+
+GIT_ROOT="$(git rev-parse --show-toplevel)/.git"
+LTIME=init
+SECONDS=1
+COMMAND="echo No command provided"
+
+while (( "$#" )); do
+    case "$1" in 
+    -s|--seconds)
+        shift
+        SECONDS=$1
+        shift
+        ;;
+    -c|--command)
+        shift
+        COMMAND=$1
+        shift
+        ;;
+    *)
+        echo "Invalid arguments" && exit 1
+        ;;
+    esac
+done;
+
+
+while true; do
+    ATIME=`stat -c %Z "$GIT_ROOT/index"`
+    if [[ "$ATIME" != "$LTIME" ]]
+    then    
+        # clear the screen
+        printf "\033c"
+        # Run the command repeatedly
+        $COMMAND
+        LTIME=$ATIME
+    fi
+    LTIME=`stat -c %Z "$GIT_ROOT/index"`
+    sleep "$SECONDS"
+done
