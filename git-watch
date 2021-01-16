@@ -5,14 +5,14 @@ set -eu -o pipefail
 
 GIT_ROOT="$(git rev-parse --show-toplevel)/.git"
 LTIME=init
-SECONDS=1
+WAIT_SECS=1
 COMMAND="echo No command provided"
 
 while (( "$#" )); do
     case "$1" in 
     -s|--seconds)
         shift
-        SECONDS=$1
+        WAIT_SECS=$1
         shift
         ;;
     -c|--command)
@@ -37,6 +37,5 @@ while true; do
         $COMMAND
         LTIME=$ATIME
     fi
-    LTIME=`stat -c %Z "$GIT_ROOT/index"`
-    sleep "$SECONDS"
+    sleep "$WAIT_SECS"
 done
