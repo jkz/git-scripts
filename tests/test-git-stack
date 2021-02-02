@@ -4,10 +4,44 @@
 set -eu -o pipefail
 
 DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )"; pwd)"
-CMD_DIR=$(cd "$DIR/.."; pwd)
+CMD_DIR="$(cd "$DIR/.."; pwd)"
 TEST_DIR="$DIR/test-run-git-stack-tmp-repo"
+GIT_USER="$(git config user.name)"
 
 alias git-stack="$CMD_DIR/git-stack"
+
+function indent() {
+    sed 's/^/  /'
+}
+
+function expect-equal() {
+    actual=$1
+    expected=$2
+    delta="$(diff <(echo "${actual/\//\/}" ) <(echo "${expected/\//\/}"))" || echo ""
+    if [[ -n "$delta" ]]; then
+        echo "FAIL"
+        echo
+        echo "Tree doesn't match:"
+        echo 
+        echo "Expected:"
+        echo "$expected" | indent
+        echo 
+        echo "Got:"
+        echo "$actual" | indent
+    else
+        echo "OK"
+        echo
+        echo "$actual" | indent
+    fi
+}
+
+function hashless-timeless-tree() {
+    git log --graph --format='format:%s%d (%aN)' --all --date-order "$@"
+}
+function test-result() {
+    hashless-timeless-tree --no-color
+}
+
 
 function test-cleanup() {
     cd "$DIR"
@@ -50,74 +84,78 @@ function test-setup() {
 
 function test-git-stack-commit() {
     echo
+    echo "======== TEST ========"
+    echo
     echo "git-stack commit"
     echo
-
-    test-setup &> /dev/null
+    echo "----------------------"
+    echo
 
     {
+        test-setup
         git checkout branch-a
         echo "change-a-2" >> file-a
         git add .
     } &> /dev/null
 
-    echo 
-    echo BEFORE
-    echo 
-    git tree
+    hashless-timeless-tree | indent
+    echo
+    echo
+    echo "----------------------"
     echo
     git-stack commit -m commit-a-2 > /dev/null
     echo 
-    echo AFTER
-    echo 
-    git tree
+    expect-equal "$(test-result)" "$(cat "$DIR/fixtures/test-git-stack-commit.fixture")"
 }
 
 function test-git-stack-commit-amend() {
     echo
+    echo "======== TEST ========"
+    echo
     echo "git-stack commit --amend"
     echo
-
-    test-setup &> /dev/null
+    echo "----------------------"
+    echo
 
     {
+        test-setup
         git checkout branch-a
         echo "change-a-2" >> file-a
         git add .
     } &> /dev/null
 
-
-    echo 
-    echo BEFORE
-    echo 
-    git tree
+    hashless-timeless-tree | indent
+    echo
+    echo
+    echo "----------------------"
     echo
     git-stack commit --amend --no-edit > /dev/null
     echo 
-    echo AFTER
-    echo 
-    git tree
+    expect-equal "$(test-result)" "$(cat "$DIR/fixtures/test-git-stack-commit-amend.fixture")"
 }
 
 function test-git-stack-rebase() {
     echo
+    echo "======== TEST ========"
+    echo
     echo "git-stack rebase --onto branch-b branch-a branch-c"
     echo
+    echo "----------------------"
+    echo
 
-    test-setup &> /dev/null
+    {
+        test-setup
+        git checkout branch-c
+    } &> /dev/null
 
-    git checkout branch-c
-
-    echo 
-    echo BEFORE
-    echo 
-    git tree
+    hashless-timeless-tree | indent
+    echo
+    echo
+    echo "----------------------"
     echo
     git-stack rebase --onto branch-b branch-a branch-c > /dev/null
     echo 
-    echo AFTER
-    echo 
-    git tree
+    expect-equal "$(test-result)" "$(cat "$DIR/fixtures/test-git-stack-rebase.fixture")"
 }
 
 test-git-stack-commit
