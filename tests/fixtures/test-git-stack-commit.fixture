@@ -1,0 +1,7 @@
+* commit-b (branch-b) (jkz)
+| * commit-d-2 (branch-d) (jkz)
+| * commit-d (jkz)
+| * commit-c (branch-c) (jkz)
+|/  
+* commit-a-2 (HEAD -> branch-a) (jkz)
+* commit-a (jkz)
