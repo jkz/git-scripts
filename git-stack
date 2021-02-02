@@ -4,8 +4,35 @@ set -eu -o pipefail
 # set -x
 
 command=$1
+shift
+dry_run=""
+root_branch="$(git branch --show-current)"
 
-root_branch="${2-$(git branch --show-current)}"
+PARAMS=()
+
+# # Parse git stack params
+while (( "$#" )); do
+    case "$1" in 
+        --root)
+            shift
+            root_branch=$1
+            shift
+            ;;
+        --dry-run)
+            dry_run="true"
+            shift
+            ;;
+        *)
+            PARAMS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Return truthy when there are pending changes
+function git-is-clean() {
+    git diff-index --quiet HEAD
+}
 
 # Recursively find all branches in the downstream lineage of a given root branch. e.g.
 #
@@ -24,11 +51,13 @@ function echoDeps() {
     local parent="$1"
     git branch --contains "$parent" --format='%(refname:short)' | while read child ; do
         if [[ "$child" != "$parent" ]] ; then
-            echo "$parent,$child"
+            echo "$parent,$(git rev-parse "$parent"),$child,$(git rev-parse "$child")"
             echoDeps "$child"
         fi
     done
 }
+
+echoDeps "$root_branch"
 
 # Find all dependencies of distance 1, and output them in order from root to leaf e.g.
 #
@@ -41,52 +70,70 @@ function echoDeps() {
 #     A->B
 #     B->C
 #
-stack=$(
+function get-stack-snapshot() {
+    _root_branch=$1
+
     python <<HEREDOC
-from collections import Counter
+from collections import Counter, namedtuple
+Dep = namedtuple('Dep', ['parent', 'parent_sha', 'child', 'child_sha'])
 
-paths = {tuple(x.strip().split(',')) for x in '''
+deps = [x.strip().split(',') for x in ''' 
+$(echoDeps "$_root_branch")
+'''.strip().split('\n')]
 
-$(echoDeps "$root_branch")
-
-'''.strip().split('\n')}
+paths = {Dep(*dep) for dep in deps}
 
 edges = []
 while paths:
-    counts = Counter(x[1] for x in paths)
-    froms = set(x[0] for x in paths)
-    tos = set(x[1] for x in paths)
+    counts = Counter(x.child for x in paths)
+    froms = set(x.parent for x in paths)
+    tos = set(x.child for x in paths)
     next_froms = froms - tos
-    next_tos = [path for path, count in counts.items() if count == 1]
-    edges += [path for path in paths if counts[path[1]] == 1]
-    paths = [path for path in paths if path[1] not in next_tos and path[0] not in next_froms]
+    next_tos = [x for x, count in counts.items() if count == 1]
+    edges += [x for x in paths if counts[x.child] == 1]
+    paths = [x for x in paths if x.child not in next_tos and x.parent not in next_froms]
 
 for edge in edges:
     print(' '.join(edge))
 HEREDOC
-)
+}
+
+stack=$(get-stack-snapshot "$root_branch")
 
 # Using the order from root to leaf, rebase each branch on top of its parent
 function stack-rebase() {
-    printf '%s\n' "$stack" | while read base rebased ; do
-        echo "git rebase $base $rebased"
-        echo "git rebase $base $rebased" | sh
+    # echo "Rebase the stack:"
+    # printf '%s\n' "$stack"
+    printf '%s\n' "$stack" | while read parent parent_sha child child_sha ; do
+        echo "git rebase --onto $parent ${parent_sha:0:7} $child"
+        echo "git rebase --onto $parent ${parent_sha:0:7} $child" | sh
         # On my windows machine this didn't work and added a question mark after rebased?
         # git rebase "$base" "$rebased"
     done
+    git checkout "$root_branch"
 }
 
-# git-stack first collects dependency information, so it remembers 
-# when relations are lost by git commands changing the root branch hash.
+
+# # set positional arguments in their proper place
+# eval set -- "$PARAMS"
+
 case $command in
+    show)
+        printf '%s\n' "$stack" | while read parent parent_sha child child_sha ; do
+            echo "$parent -> $child ($child_sha)"
+        done
+        ;;
     commit)
-        echo "git $@"
-        git $@
+        git-is-clean && (echo && echo "ABORTED! Nothing to commit" && exit 1)
+        echo "git commit ${PARAMS[@]}"
+        git commit "${PARAMS[@]}"
         stack-rebase
         ;;
     amend)
-        echo "git commit --fixup HEAD"
-        git commit --fixup HEAD
+        # This changes the current HEAD commit,
+        # Then rebases all stacked branches on top of it
+        echo "git commit --amend"
+        [[ -z dry-run ]] && git commit --amend
         stack-rebase
         ;;
     push)
@@ -95,6 +142,10 @@ case $command in
         done
         ;;
     rebase)
+        # Need to be checked into the branch that is being rebased
+        git-is-clean || (echo && echo "ABORTED! Repo has pending changes:" && echo && git status && exit 1)
+        echo "git rebase ${PARAMS[@]}"
+        git rebase "${PARAMS[@]}"
         stack-rebase
         ;;
     *)

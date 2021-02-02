@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# Manipulate multiple, dependent branches as a single stack
+
+set -eu -o pipefail
+
+DIR="$(cd "$( dirname "${BASH_SOURCE[0]}" )"; pwd)"
+CMD_DIR=$(cd "$DIR/.."; pwd)
+TEST_DIR="$DIR/test-run-git-stack-tmp-repo"
+
+alias git-stack="$CMD_DIR/git-stack"
+
+function test-cleanup() {
+    cd "$DIR"
+    rm -rf "$TEST_DIR"
+}
+
+function test-setup() {
+    test-cleanup
+    mkdir "$TEST_DIR"
+    cd "$TEST_DIR"
+
+    git init .
+
+    git checkout -b branch-a
+    echo "change-a" >> file-a
+    git add .
+    git commit -m commit-a
+
+    git checkout -b branch-b
+    echo "change-b" >> file-b
+    git add .
+    git commit -m commit-b
+
+    git checkout branch-a
+    git checkout -b branch-c
+    echo "change-c" >> file-c
+    git add .
+    git commit -m commit-c
+
+    git checkout -b branch-d
+    echo "change-d" >> file-d
+    git add .
+    git commit -m commit-d
+
+    echo "change-d-2" >> file-d
+    git add .
+    git commit -m commit-d-2
+}
+
+
+function test-git-stack-commit() {
+    echo
+    echo "git-stack commit"
+    echo
+
+    test-setup &> /dev/null
+
+    {
+        git checkout branch-a
+        echo "change-a-2" >> file-a
+        git add .
+    } &> /dev/null
+
+    echo 
+    echo BEFORE
+    echo 
+    git tree
+    echo
+    git-stack commit -m commit-a-2 > /dev/null
+    echo 
+    echo AFTER
+    echo 
+    git tree
+}
+
+function test-git-stack-commit-amend() {
+    echo
+    echo "git-stack commit --amend"
+    echo
+
+    test-setup &> /dev/null
+
+    {
+        git checkout branch-a
+        echo "change-a-2" >> file-a
+        git add .
+    } &> /dev/null
+
+
+    echo 
+    echo BEFORE
+    echo 
+    git tree
+    echo
+    git-stack commit --amend --no-edit > /dev/null
+    echo 
+    echo AFTER
+    echo 
+    git tree
+}
+
+function test-git-stack-rebase() {
+    echo
+    echo "git-stack rebase --onto branch-b branch-a branch-c"
+    echo
+
+    test-setup &> /dev/null
+
+    git checkout branch-c
+
+    echo 
+    echo BEFORE
+    echo 
+    git tree
+    echo
+    git-stack rebase --onto branch-b branch-a branch-c > /dev/null
+    echo 
+    echo AFTER
+    echo 
+    git tree
+}
+
+test-git-stack-commit
+test-git-stack-commit-amend
+test-git-stack-rebase
