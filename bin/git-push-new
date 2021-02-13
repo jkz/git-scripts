@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# 1. Creating a new branch on remote means I have to type out the branch name
+#    every time, which is a pain.
+# 2. GitHub shows you a URL to create a PR for a newly pushed branch. Open
+#    that, if present.
+
+set -e
+
+branch="$(git branch --show-current)"
+remote=origin
+# Command to open a URL. "open" on Mac.
+browser=open
+
+# If we can't open URLs, there's no use trying any fancy URL parsing.
+if ! type &>/dev/null "$browser" ; then
+	exec git push -u "$remote" "$branch"
+fi
+
+if type &>/dev/null unbuffer ; then
+	unbuffer=unbuffer
+else
+	unbuffer=""
+fi
+
+function extract-urls {
+	# Git adds control characters when it thinks stdout is a TTY, which aren't
+	# part of the URL.
+	grep -o 'https://[^"> '$'\x1b'']*'
+}
+
+# git push shows progress of the push if it thinks the output is a TTY. Using
+# the `unbuffer` command, if present, allows us to keep that output. If not,
+# this will behave as a regular pipe, and git push will still show you the
+# remote output, just no progress.
+$unbuffer git push -u "$remote" "$branch" 2>&1 | tee /dev/stderr | extract-urls | xargs "$browser"
+
+# Copyright © 2021 Hraban Luyat <hraban@0brg.net>
+#
+# License for use of this code is detailed in the agpl-3.0.txt file
