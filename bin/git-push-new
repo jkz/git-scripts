@@ -7,14 +7,13 @@
 
 set -e
 
-branch="$(git branch --show-current)"
 remote=origin
 # Command to open a URL. "open" on Mac.
 browser=open
 
 # If we can't open URLs, there's no use trying any fancy URL parsing.
 if ! type &>/dev/null "$browser" ; then
-	exec git push -u "$remote" "$branch"
+	exec git push -u "$remote" HEAD
 fi
 
 if type &>/dev/null unbuffer ; then
@@ -33,7 +32,7 @@ function extract-urls {
 # the `unbuffer` command, if present, allows us to keep that output. If not,
 # this will behave as a regular pipe, and git push will still show you the
 # remote output, just no progress.
-$unbuffer git push -u "$remote" "$branch" 2>&1 | tee /dev/stderr | extract-urls | xargs "$browser"
+$unbuffer git push -u "$remote" HEAD 2>&1 | tee /dev/stderr | extract-urls | xargs "$browser"
 
 # Copyright © 2021 Hraban Luyat <hraban@0brg.net>
 #
