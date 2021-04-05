@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+set -eu -o pipefail
+${DEBUGSH+set -x}
+
+root="$(git rev-parse --show-toplevel)"
+todof="$root/.git/graft-todo"
+
+function usage {
+    >&2 echo "Usage:"
+    >&2 echo
+    >&2 echo "  git graft --abort"
+    >&2 echo "  git graft BASE-BRANCH"
+}
+
+function abort {
+    >&2 echo "You should know, this doesn't actually restore anything. You're still half-way through a graft. Good luck."
+    rm -f "$todof"
+    exit
+}
+
+function ensure-not-in-progress {
+    if [[ -f "$todof" ]] ; then
+        >&2 echo "Error: git graft in progress."
+        >&2 echo
+        >&2 echo "Cancel it with git graft --abort"
+        exit 1
+    fi
+}
+
+function ensure-in-progress {
+    if [[ -f "$todof" ]] ; then
+        >&2 echo "Error: git graft not in progress."
+        exit 1
+    fi
+}
+
+function working-dir-clean {
+    git diff --quiet && git diff --cached --quiet
+}
+
+function ensure-no-changes {
+    if ! working-dir-clean ; then
+        >&2 echo "Error: outstanding changes. Cannot graft."
+        exit 1
+    fi
+}
+
+function branch-contains {
+    git branch --contains "$1" | sed -e s/..//
+}
+
+function todo {
+    ref="${1?Usage: git graft <ROOT> [onto]}"
+    master="${2-master}"
+    base="$(git merge-base --fork-point "$ref" "$master" || true)"
+    if [[ -z "$base" ]]; then
+        base="$(git merge-base "$ref" "$master")"
+    fi
+    branch-contains "$ref" | while read b ; do
+        echo git checkout --quiet "'$b'"
+        echo git rebase "'$base'" --onto "'$master'"
+        base="$(git rev-parse "$b")"
+        master="$b"
+    done
+}
+
+function continue {
+    ensure-no-changes
+    line="$(head -1 "$todof")"
+    if [[ -z "$line" ]]; then
+        rm -f "$todof"
+        return
+    fi
+    if ! eval "$line" ; then
+        >&2 echo
+        >&2 echo "error: failed to graft at $line"
+        >&2 echo
+        >&2 echo "Try to resolve the conflicts and finish this rebase, and run git graft --continue."
+        >&2 echo
+        >&2 echo "You can inspect the graft commands left in $todof"
+        >&2 echo "Your repo is in an inconsistent state and tbf if that git graft --continue thing doesn't work, you're on your own."
+        exit 1
+    fi
+    tail +2 "$todof" | sponge "$todof"
+    continue
+}
+
+function build-todo {
+    ensure-not-in-progress
+    todo "$@" > "$todof"
+}
+
+function main {
+    build-todo "$@"
+    continue
+}
+
+if [[ "$#" -lt 1 ]]; then
+    usage
+    exit 1
+fi
+
+case "$1" in
+    help | --help | -h)
+        usage
+        ;;
+    --abort)
+        abort
+        ;;
+    --continue)
+        continue
+        ;;
+    --build-todo)
+        shift
+        build-todo "$@"
+        ;;
+    *)
+        main "$@"
+        ;;
+esac
